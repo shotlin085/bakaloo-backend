@@ -122,14 +122,6 @@ export class ScratchCardService {
    * result the customer already saw revealed.
    */
   async scratch(userId) {
-    // Name-mandatory gate — same as orders.service.js#placeOrder and
-    // SpinWheelService#spin: a scratch can issue real value (cashback
-    // credit or a coupon), so a nameless account must be blocked.
-    const scratchingUser = await this.usersRepo.findById(userId)
-    if (!scratchingUser || !(scratchingUser.name || '').trim()) {
-      return { success: false, message: 'Please add your name to your profile before scratching a card' }
-    }
-
     const client = await getClient()
     let wonPrize = null
     let scratchesRemaining = 0

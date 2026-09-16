@@ -103,10 +103,6 @@ function makeWalletServiceMock(overrides = {}) {
 function makeUsersRepoMock(overrides = {}) {
   return {
     getStats: vi.fn().mockResolvedValue({ total_orders: 0, total_spent: '0' }),
-    // scratch()'s name-mandatory gate (see scratch-card.service.js) needs a
-    // named user to get past it — every describe block in this file is
-    // about prize/wallet/milestone logic, not that gate, so default to a
-    // user who already has a name on file.
     findById: vi.fn().mockResolvedValue({ id: USER_ID, name: 'Test User' }),
     ...overrides,
   }
@@ -189,6 +185,20 @@ describe('ScratchCardService — prize coupon-linkage validation (positive + neg
 })
 
 describe('ScratchCardService.scratch — eligibility + resolution', () => {
+  it('a nameless account can still scratch — no identity gate (positive)', async () => {
+    const usersRepo = makeUsersRepoMock({ findById: vi.fn().mockResolvedValue({ id: USER_ID, name: null }) })
+    const repo = makeRepoMock({
+      getOrCreateScratchWalletForUpdate: vi.fn().mockResolvedValue({ userId: USER_ID, availableScratches: 5, grantedToday: true }),
+      findActivePrizes: vi.fn().mockResolvedValue([
+        prize({ type: 'CASHBACK', value: 20, winProbability: 100 }),
+        prize({ id: 'p2', winProbability: 0 }),
+      ]),
+    })
+    const service = makeService({ repo, usersRepo })
+    const result = await service.scratch(USER_ID)
+    expect(result.success).toBe(true)
+  })
+
   it('rejects with no scratch cards available and does not insert history (negative)', async () => {
     const repo = makeRepoMock({
       getOrCreateScratchWalletForUpdate: vi.fn().mockResolvedValue({ userId: USER_ID, availableScratches: 0, grantedToday: true }),
@@ -301,14 +311,6 @@ describe('ScratchCardService.scratch — eligibility + resolution', () => {
     const service = makeService({ repo })
     const result = await service.scratch(USER_ID)
     expect(result.success).toBe(false)
-  })
-
-  it('blocks a nameless account from scratching (negative)', async () => {
-    const usersRepo = makeUsersRepoMock({ findById: vi.fn().mockResolvedValue({ id: USER_ID, name: '' }) })
-    const service = makeService({ usersRepo })
-    const result = await service.scratch(USER_ID)
-    expect(result.success).toBe(false)
-    expect(result.message).toMatch(/name/i)
   })
 })
 

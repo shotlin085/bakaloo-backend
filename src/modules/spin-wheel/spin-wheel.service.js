@@ -166,14 +166,6 @@ export class SpinWheelService {
    * thus hide) a spin the customer already saw resolve.
    */
   async spin(userId) {
-    // Name-mandatory gate — same as orders.service.js#placeOrder: a spin
-    // can issue real value (cashback credit or a coupon), so a nameless
-    // account must be blocked from redeeming one, not just from checkout.
-    const spinningUser = await this.usersRepo.findById(userId)
-    if (!spinningUser || !(spinningUser.name || '').trim()) {
-      return { success: false, message: 'Please add your name to your profile before spinning' }
-    }
-
     const client = await getClient()
     let wonPrize = null
     let spinsRemaining = 0

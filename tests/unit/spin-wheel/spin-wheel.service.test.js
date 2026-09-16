@@ -103,10 +103,6 @@ function makeWalletServiceMock(overrides = {}) {
 function makeUsersRepoMock(overrides = {}) {
   return {
     getStats: vi.fn().mockResolvedValue({ total_orders: 0, total_spent: '0' }),
-    // spin()'s name-mandatory gate (see spin-wheel.service.js) needs a named
-    // user to get past it — every describe block in this file is about
-    // prize/wallet/milestone logic, not that gate, so default to a user who
-    // already has a name on file.
     findById: vi.fn().mockResolvedValue({ id: USER_ID, name: 'Test User' }),
     ...overrides,
   }
@@ -189,6 +185,20 @@ describe('SpinWheelService — prize coupon-linkage validation (positive + negat
 })
 
 describe('SpinWheelService.spin — eligibility + resolution', () => {
+  it('a nameless account can still spin — no identity gate (positive)', async () => {
+    const usersRepo = makeUsersRepoMock({ findById: vi.fn().mockResolvedValue({ id: USER_ID, name: null }) })
+    const repo = makeRepoMock({
+      getOrCreateSpinWalletForUpdate: vi.fn().mockResolvedValue({ userId: USER_ID, availableSpins: 5, grantedToday: true }),
+      findActivePrizes: vi.fn().mockResolvedValue([
+        prize({ type: 'CASHBACK', value: 20, winProbability: 100 }),
+        prize({ id: 'p2', winProbability: 0 }),
+      ]),
+    })
+    const service = makeService({ repo, usersRepo })
+    const result = await service.spin(USER_ID)
+    expect(result.success).toBe(true)
+  })
+
   it('rejects with no spins available and does not insert history (negative)', async () => {
     const repo = makeRepoMock({
       getOrCreateSpinWalletForUpdate: vi.fn().mockResolvedValue({ userId: USER_ID, availableSpins: 0, grantedToday: true }),
