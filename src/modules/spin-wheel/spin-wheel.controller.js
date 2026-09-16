@@ -19,7 +19,7 @@ export class SpinWheelController {
 
   /** GET /config */
   async config(request, reply) {
-    const prizes = await this.service.getActivePrizesForCustomer()
+    const prizes = await this.service.getActivePrizesForCustomer(request.user?.id ?? null)
     return reply.code(200).send(success(prizes, 'Spin wheel config fetched'))
   }
 

@@ -390,6 +390,72 @@ describe('SpinWheelService.spin — first-time guaranteed reward', () => {
   })
 })
 
+describe('SpinWheelService.getActivePrizesForCustomer — wheel visual matches what spin() can actually land on', () => {
+  it('a brand-new player (no spin history) sees the first-time pool, not the normal one (positive)', async () => {
+    const repo = makeRepoMock({
+      getSettings: vi.fn().mockResolvedValue({ dailyFreeSpins: 1, triggerMode: 'ALWAYS_ON_LOGIN', firstTimeRewardEnabled: true }),
+      hasSpinHistory: vi.fn().mockResolvedValue(false),
+      findActiveFirstTimePrizes: vi.fn().mockResolvedValue([
+        prize({ id: 'ft-1', label: 'Welcome Gift', winProbability: 100 }),
+      ]),
+      findActivePrizes: vi.fn().mockResolvedValue([
+        prize({ type: 'BETTER_LUCK', label: 'Better Luck Next Time', winProbability: 100 }),
+        prize({ id: 'p2', winProbability: 0 }),
+      ]),
+    })
+    const service = makeService({ repo })
+    const result = await service.getActivePrizesForCustomer(USER_ID)
+    expect(result).toEqual([expect.objectContaining({ id: 'ft-1', label: 'Welcome Gift' })])
+  })
+
+  it('a returning player (has spin history) sees the normal pool (negative)', async () => {
+    const repo = makeRepoMock({
+      getSettings: vi.fn().mockResolvedValue({ dailyFreeSpins: 1, triggerMode: 'ALWAYS_ON_LOGIN', firstTimeRewardEnabled: true }),
+      hasSpinHistory: vi.fn().mockResolvedValue(true),
+      findActiveFirstTimePrizes: vi.fn().mockResolvedValue([prize({ id: 'ft-1', winProbability: 100 })]),
+      findActivePrizes: vi.fn().mockResolvedValue([prize({ id: 'normal-1', winProbability: 100 })]),
+    })
+    const service = makeService({ repo })
+    const result = await service.getActivePrizesForCustomer(USER_ID)
+    expect(result).toEqual([expect.objectContaining({ id: 'normal-1' })])
+    expect(repo.findActiveFirstTimePrizes).not.toHaveBeenCalled()
+  })
+
+  it('first-time reward disabled in settings falls back to the normal pool for a first-ever player (negative)', async () => {
+    const repo = makeRepoMock({
+      getSettings: vi.fn().mockResolvedValue({ dailyFreeSpins: 1, triggerMode: 'ALWAYS_ON_LOGIN', firstTimeRewardEnabled: false }),
+      hasSpinHistory: vi.fn().mockResolvedValue(false),
+      findActivePrizes: vi.fn().mockResolvedValue([prize({ id: 'normal-1', winProbability: 100 })]),
+    })
+    const service = makeService({ repo })
+    const result = await service.getActivePrizesForCustomer(USER_ID)
+    expect(result).toEqual([expect.objectContaining({ id: 'normal-1' })])
+    expect(repo.findActiveFirstTimePrizes).not.toHaveBeenCalled()
+  })
+
+  it('a misconfigured first-time pool falls back to the normal pool instead of showing an invalid wheel (negative)', async () => {
+    const repo = makeRepoMock({
+      getSettings: vi.fn().mockResolvedValue({ dailyFreeSpins: 1, triggerMode: 'ALWAYS_ON_LOGIN', firstTimeRewardEnabled: true }),
+      hasSpinHistory: vi.fn().mockResolvedValue(false),
+      findActiveFirstTimePrizes: vi.fn().mockResolvedValue([]), // below MIN_ACTIVE_FIRST_TIME_PRIZES
+      findActivePrizes: vi.fn().mockResolvedValue([prize({ id: 'normal-1', winProbability: 100 })]),
+    })
+    const service = makeService({ repo })
+    const result = await service.getActivePrizesForCustomer(USER_ID)
+    expect(result).toEqual([expect.objectContaining({ id: 'normal-1' })])
+  })
+
+  it('an anonymous caller (no userId) sees the normal pool (negative)', async () => {
+    const repo = makeRepoMock({
+      findActivePrizes: vi.fn().mockResolvedValue([prize({ id: 'normal-1', winProbability: 100 })]),
+    })
+    const service = makeService({ repo })
+    const result = await service.getActivePrizesForCustomer(null)
+    expect(result).toEqual([expect.objectContaining({ id: 'normal-1' })])
+    expect(repo.getSettings).not.toHaveBeenCalled()
+  })
+})
+
 describe('SpinWheelService.getAppearanceForCustomer — background image + banner copy', () => {
   it('derives a capped1080-profile Cloudinary URL when a public id is on file (positive)', async () => {
     const repo = makeRepoMock({

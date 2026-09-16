@@ -53,9 +53,35 @@ export class SpinWheelService {
 
   // ─── Customer-facing ────────────────────────────────────────────────────
 
-  /** Active prizes for rendering the wheel — deliberately excludes winProbability and linkedCouponId (odds/internal wiring aren't the client's business). */
-  async getActivePrizesForCustomer() {
-    const prizes = await this.repo.findActivePrizes()
+  /**
+   * Active prizes for rendering the wheel — deliberately excludes
+   * winProbability and linkedCouponId (odds/internal wiring aren't the
+   * client's business).
+   *
+   * For a logged-in viewer on their very first spin ever, this returns the
+   * first-time pool instead of the normal one — the wheel a customer looks
+   * at (and watches land) has to be the same pool spin() will actually
+   * resolve from, or the wedge it lands on wouldn't even be one of the
+   * options drawn on screen. Same enabled/history/validation checks as
+   * spin()'s own first-time branch, just read-only (no wallet row lock
+   * needed — this is a display fetch, not a transaction). Falls back to
+   * the normal pool exactly like spin() does when the first-time pool
+   * itself isn't configured validly, or for an anonymous/no-userId caller.
+   */
+  async getActivePrizesForCustomer(userId = null) {
+    let prizes = null
+    if (userId) {
+      const settings = await this.repo.getSettings()
+      if (settings.firstTimeRewardEnabled && !(await this.repo.hasSpinHistory(null, userId))) {
+        const firstTimePrizes = await this.repo.findActiveFirstTimePrizes()
+        if (this._validateActiveSetForFirstTime(firstTimePrizes).ok) {
+          prizes = firstTimePrizes
+        }
+      }
+    }
+    if (!prizes) {
+      prizes = await this.repo.findActivePrizes()
+    }
     return prizes.map((p) => ({
       id: p.id,
       type: p.type,
