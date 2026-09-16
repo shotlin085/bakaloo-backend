@@ -379,30 +379,49 @@ export class SpinWheelService {
    * checkout. Inactive prizes are exempt (a template with no coupon linked
    * yet is a legitimate, expected state — see the seed data in migration
    * 118).
+   *
+   * For PERCENTAGE_OFF/FLAT_OFF this also derives `value` straight from
+   * the linked coupon's own discount_value (returned as `derivedValue` for
+   * the caller to fold into the row it's about to write). The wheel wedge
+   * and the app's "You've won…" copy both need a real number, but the
+   * coupon is the only place that number should ever be typed in — the
+   * dashboard no longer collects it a second time, which would just be a
+   * driftable copy that silently goes stale the next time someone edits
+   * the coupon. Rejects a coupon whose own discount_type doesn't match the
+   * prize type (e.g. a FLAT coupon linked to a Percentage Off prize) so
+   * that mismatch can't silently produce a nonsense value.
    */
   async _validatePrizeCoupon(data) {
-    if (!COUPON_REQUIRED_TYPES.has(data.type)) return null
-    if (data.isActive === false) return null
+    if (!COUPON_REQUIRED_TYPES.has(data.type)) return {}
+    if (data.isActive === false) return {}
     if (!data.linkedCouponId) {
-      return `${data.type} prizes need a linked coupon before they can go active — link one from the Coupons page first.`
+      return { error: `${data.type} prizes need a linked coupon before they can go active — link one from the Coupons page first.` }
     }
     const coupon = await this.couponsRepo.findById(data.linkedCouponId)
-    if (!coupon) return 'Selected coupon was not found'
+    if (!coupon) return { error: 'Selected coupon was not found' }
     if (coupon.targetType !== 'INDIVIDUAL') {
-      return `"${coupon.code}" must have its Target Audience set to "Individual" to work as a spin prize — it's currently "${coupon.targetType}".`
+      return { error: `"${coupon.code}" must have its Target Audience set to "Individual" to work as a spin prize — it's currently "${coupon.targetType}".` }
     }
     if (!coupon.isActive) {
-      return `"${coupon.code}" is inactive — activate it before linking it as a spin prize.`
+      return { error: `"${coupon.code}" is inactive — activate it before linking it as a spin prize.` }
     }
-    return null
+    if (data.type === 'PERCENTAGE_OFF' && coupon.discountType !== 'PERCENTAGE') {
+      return { error: `"${coupon.code}" is a ${coupon.discountType} coupon — a Percentage Off prize needs a coupon whose discount type is Percentage.` }
+    }
+    if (data.type === 'FLAT_OFF' && coupon.discountType !== 'FLAT') {
+      return { error: `"${coupon.code}" is a ${coupon.discountType} coupon — a Flat Amount Off prize needs a coupon whose discount type is Flat.` }
+    }
+    const derivedValue = (data.type === 'PERCENTAGE_OFF' || data.type === 'FLAT_OFF') ? coupon.discountValue : undefined
+    return { derivedValue }
   }
 
   async createPrize(data, actor) {
     if (!data.type || !data.label) {
       return { success: false, message: 'type and label are required' }
     }
-    const couponError = await this._validatePrizeCoupon(data)
+    const { error: couponError, derivedValue } = await this._validatePrizeCoupon(data)
     if (couponError) return { success: false, message: couponError }
+    if (derivedValue !== undefined) data.value = derivedValue
     if (data.isActive !== false) {
       const activeCount = await this.repo.countActive()
       if (activeCount + 1 > MAX_ACTIVE_PRIZES) {
@@ -427,8 +446,9 @@ export class SpinWheelService {
     const existing = await this.repo.findPrizeById(id)
     if (!existing) return { success: false, message: 'Prize not found' }
     const merged = { ...existing, ...data }
-    const couponError = await this._validatePrizeCoupon(merged)
+    const { error: couponError, derivedValue } = await this._validatePrizeCoupon(merged)
     if (couponError) return { success: false, message: couponError }
+    if (derivedValue !== undefined) data.value = derivedValue
     if (merged.isActive !== false && !existing.isActive) {
       const activeCount = await this.repo.countActive(id)
       if (activeCount + 1 > MAX_ACTIVE_PRIZES) {
@@ -495,8 +515,9 @@ export class SpinWheelService {
     if (!data.type || !data.label) {
       return { success: false, message: 'type and label are required' }
     }
-    const couponError = await this._validatePrizeCoupon(data)
+    const { error: couponError, derivedValue } = await this._validatePrizeCoupon(data)
     if (couponError) return { success: false, message: couponError }
+    if (derivedValue !== undefined) data.value = derivedValue
     if (data.isActive !== false) {
       const activeCount = await this.repo.countActiveFirstTime()
       if (activeCount + 1 > MAX_ACTIVE_PRIZES) {
@@ -521,8 +542,9 @@ export class SpinWheelService {
     const existing = await this.repo.findFirstTimePrizeById(id)
     if (!existing) return { success: false, message: 'Prize not found' }
     const merged = { ...existing, ...data }
-    const couponError = await this._validatePrizeCoupon(merged)
+    const { error: couponError, derivedValue } = await this._validatePrizeCoupon(merged)
     if (couponError) return { success: false, message: couponError }
+    if (derivedValue !== undefined) data.value = derivedValue
     if (merged.isActive !== false && !existing.isActive) {
       const activeCount = await this.repo.countActiveFirstTime(id)
       if (activeCount + 1 > MAX_ACTIVE_PRIZES) {

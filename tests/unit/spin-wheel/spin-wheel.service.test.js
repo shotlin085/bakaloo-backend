@@ -163,6 +163,51 @@ describe('SpinWheelService — prize coupon-linkage validation (positive + negat
     expect(result.success).toBe(true)
   })
 
+  it('rejects a PERCENTAGE_OFF prize linked to a coupon whose discount type is not Percentage (negative)', async () => {
+    const couponsRepo = makeCouponsRepoMock({
+      findById: vi.fn().mockResolvedValue({
+        id: 'c-1', code: 'FLAT50', targetType: 'INDIVIDUAL', isActive: true, discountType: 'FLAT', discountValue: 50,
+      }),
+    })
+    const service = makeService({ couponsRepo })
+    const result = await service.createPrize(
+      { type: 'PERCENTAGE_OFF', label: '10% OFF', isActive: true, linkedCouponId: 'c-1' },
+      ACTOR
+    )
+    expect(result.success).toBe(false)
+    expect(result.message).toMatch(/discount type is Percentage/i)
+  })
+
+  it('derives value from the linked coupon for a PERCENTAGE_OFF prize instead of trusting a client-supplied one (positive)', async () => {
+    const couponsRepo = makeCouponsRepoMock({
+      findById: vi.fn().mockResolvedValue({
+        id: 'c-1', code: 'SAVE15', targetType: 'INDIVIDUAL', isActive: true, discountType: 'PERCENTAGE', discountValue: 15,
+      }),
+    })
+    const service = makeService({ couponsRepo })
+    const result = await service.createPrize(
+      { type: 'PERCENTAGE_OFF', label: '15% OFF', isActive: true, linkedCouponId: 'c-1' },
+      ACTOR
+    )
+    expect(result.success).toBe(true)
+    expect(result.prize.value).toBe(15)
+  })
+
+  it('derives value from the linked coupon for a FLAT_OFF prize (positive)', async () => {
+    const couponsRepo = makeCouponsRepoMock({
+      findById: vi.fn().mockResolvedValue({
+        id: 'c-1', code: 'FLAT50', targetType: 'INDIVIDUAL', isActive: true, discountType: 'FLAT', discountValue: 50,
+      }),
+    })
+    const service = makeService({ couponsRepo })
+    const result = await service.createPrize(
+      { type: 'FLAT_OFF', label: '₹50 OFF', isActive: true, linkedCouponId: 'c-1' },
+      ACTOR
+    )
+    expect(result.success).toBe(true)
+    expect(result.prize.value).toBe(50)
+  })
+
   it('allows an INACTIVE coupon-requiring prize with no linked coupon — templates are a legitimate state (positive)', async () => {
     const service = makeService()
     const result = await service.createPrize({ type: 'BUY_ONE_GET_ONE', label: 'BUY 1 GET 1', isActive: false }, ACTOR)
