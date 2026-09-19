@@ -67,9 +67,29 @@ async function socketioPlugin(fastify) {
     env.CORS_ORIGINS.split(',').map((s) => s.trim())
   )
 
+  // Production web domains are always allowed for browser socket clients,
+  // matching the HTTP CORS policy in plugins/cors.plugin.js. Without this,
+  // a deploy whose CORS_ORIGINS omits the storefront origin passes the HTTP
+  // API (suffix allowlist) but browser-blocks the Socket.IO polling
+  // fallback — the websocket transport is unaffected either way.
+  const allowedHostSuffixes = ['bakaloo.in', 'shotlin.in', 'vercel.app']
+  function isOriginAllowed(origin) {
+    if (!origin) return true
+    if (corsOrigins.includes(origin)) return true
+    try {
+      const { hostname, protocol } = new URL(origin)
+      if (protocol !== 'https:' && protocol !== 'http:') return false
+      return allowedHostSuffixes.some(
+        (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`)
+      )
+    } catch {
+      return false
+    }
+  }
+
   const io = new Server(fastify.server, {
     cors: {
-      origin: corsOrigins,
+      origin: (origin, cb) => cb(null, isOriginAllowed(origin)),
       methods: ['GET', 'POST'],
       credentials: true,
     },
